@@ -1,15 +1,19 @@
 const CACHE = "phomemo-d30-v1";
 
+// Resolve paths relative to the SW's own location so the app works both on
+// localhost (/) and on GitHub Pages (/phomemo-d30-web-bluetooth/).
+const BASE = new URL("./", self.location).href;
+
 // Local assets — pre-cached on install so the app works fully offline
 const LOCAL_ASSETS = [
-	"/",
-	"/index.html",
-	"/index.js",
-	"/index.css",
-	"/src/printer.js",
-	"/manifest.json",
-	"/icon.svg",
-	"/icon-maskable.svg",
+	BASE,
+	BASE + "index.html",
+	BASE + "index.js",
+	BASE + "index.css",
+	BASE + "src/printer.js",
+	BASE + "manifest.json",
+	BASE + "icon.svg",
+	BASE + "icon-maskable.svg",
 ];
 
 // CDN assets — also pre-cached so the app works without internet access
