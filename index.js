@@ -166,17 +166,60 @@ document.addEventListener("DOMContentLoaded", function () {
 	$("#inputImage").addEventListener("change", () => updateCanvasImage(canvas));
 	$("#inputQR").addEventListener("input", () => updateCanvasQR(canvas));
 
-	$("form").addEventListener("submit", (e) => {
+	// Cache the paired device so subsequent prints reconnect silently without
+	// showing the device picker again.
+	let cachedDevice = null;
+	let cachedChar = null;
+
+	const SERVICE_UUID = "0000ff00-0000-1000-8000-00805f9b34fb";
+	const CHAR_UUID = "0000ff02-0000-1000-8000-00805f9b34fb";
+
+	const getCharacteristic = async () => {
+		// Reuse existing connection if still live
+		if (cachedChar && cachedDevice?.gatt?.connected) {
+			return cachedChar;
+		}
+
+		// Device known but disconnected — try silent reconnect first
+		if (cachedDevice) {
+			try {
+				const server = await cachedDevice.gatt.connect();
+				const service = await server.getPrimaryService(SERVICE_UUID);
+				cachedChar = await service.getCharacteristic(CHAR_UUID);
+				return cachedChar;
+			} catch {
+				// Silent reconnect failed; fall through to show picker again
+				cachedDevice = null;
+				cachedChar = null;
+			}
+		}
+
+		// No device yet (or reconnect failed) — show the browser device picker
+		const device = await navigator.bluetooth.requestDevice({
+			acceptAllDevices: true,
+			optionalServices: [SERVICE_UUID],
+		});
+
+		// When the device disconnects, clear the characteristic so the next
+		// print attempt triggers a silent reconnect rather than failing silently.
+		device.addEventListener("gattserverdisconnected", () => {
+			cachedChar = null;
+		});
+
+		cachedDevice = device;
+		const server = await device.gatt.connect();
+		const service = await server.getPrimaryService(SERVICE_UUID);
+		cachedChar = await service.getCharacteristic(CHAR_UUID);
+		return cachedChar;
+	};
+
+	$("form").addEventListener("submit", async (e) => {
 		e.preventDefault();
-		navigator.bluetooth
-			.requestDevice({
-				acceptAllDevices: true,
-				optionalServices: ["0000ff00-0000-1000-8000-00805f9b34fb"],
-			})
-			.then((device) => device.gatt.connect())
-			.then((server) => server.getPrimaryService("0000ff00-0000-1000-8000-00805f9b34fb"))
-			.then((service) => service.getCharacteristic("0000ff02-0000-1000-8000-00805f9b34fb"))
-			.then((char) => printCanvas(char, canvas))
-			.catch(handleError);
+		try {
+			const char = await getCharacteristic();
+			await printCanvas(char, canvas);
+		} catch (err) {
+			handleError(err);
+		}
 	});
 });
