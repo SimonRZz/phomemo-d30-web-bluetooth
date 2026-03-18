@@ -1,118 +1,105 @@
-let bluetoothDevice = null;
-let printerCharacteristic = null;
+// Seems to work best with 128 bytes
+const PACKET_SIZE_BYTES = 128;
 
-const statusEl = document.getElementById('status');
+/**
+ * Return the header data needed to start the print session.
+ * Adapted from {@link https://github.com/Knightro63/phomemo}
+ *
+ * @param {number} mmWidth the width (in mm) of the image. labels are printed vertically, so for e.g. a 40mm W x 12mm H label this would be 12.
+ * @param {number} bytes the amount of bytes expected per row of the image e.g. (data.length / mmWidth)
+ * @returns {Uint8Array}
+ */
+const HEADER_DATA = (mmWidth, bytes) =>
+	new Uint8Array([
+		0x1b,
+		0x40,
+		0x1d,
+		0x76,
+		0x30,
+		0x00,
+		mmWidth % 256,
+		Math.floor(mmWidth / 256),
+		bytes % 256,
+		Math.floor(bytes / 256),
+	]);
 
-async function connectPrinter() {
-  try {
-    if (bluetoothDevice && bluetoothDevice.gatt.connected) {
-      statusEl.textContent = "Bereits verbunden mit " + bluetoothDevice.name;
-      return;
-    }
+/** Constant data which ends the print session. */
+const END_DATA = new Uint8Array([0x1b, 0x64, 0x00]);
 
-    if (!bluetoothDevice) {
-  bluetoothDevice = await navigator.bluetooth.requestDevice({
-    filters: [
-      { namePrefix: "Phomemo" },
-      { namePrefix: "PM-" },
-      { name: "D30" }
-    ],
-    optionalServices: [0xff00]
-  });
-}
+/**
+ * Determines a given pixel to be either black (1, print) or white (0, don't print).
+ * Uses weighted grayscale luminance so that colored pixels (e.g. emojis) are
+ * correctly classified as dark or light instead of always being treated as white.
+ *
+ * @param {HTMLCanvasElement} canvas the canvas you're printing
+ * @param {Uint8Array} imageData the image data to check
+ * @param {number} x X of the pixel to check
+ * @param {number} y Y of the pixel to check
+ * @returns {number} 1 if pixel should be printed black, 0 if white
+ */
+const getWhitePixel = (canvas, imageData, x, y) => {
+	const idx = (canvas.width * y + x) * 4;
+	const red = imageData[idx];
+	const green = imageData[idx + 1];
+	const blue = imageData[idx + 2];
+	// Weighted grayscale luminance — dark pixels print, light pixels don't.
+	// This correctly handles colored emoji pixels (e.g. yellow 😊 → luminance ~200 → white)
+	// and dark emoji outlines/shadows (low luminance → black).
+	const luminance = (red * 299 + green * 587 + blue * 114) / 1000;
+	return luminance < 128 ? 1 : 0;
+};
 
+/**
+ * Given a canvas, converts it to a byte array in the format expected by the Phomemo D30.
+ * Adapted from {@link https://github.com/WebBluetoothCG/demos/tree/gh-pages/bluetooth-printer}
+ *
+ * @param {HTMLCanvasElement} canvas the canvas to convert to print data
+ * @returns {Uint8Array} the byte array to transmit (in chunks) to the Bluetooth printer
+ */
+const getPrintData = (canvas) => {
+	const ctx = canvas.getContext("2d");
+	const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
 
-    const server = await bluetoothDevice.gatt.connect();
-    const service = await server.getPrimaryService(0xff00);
-    printerCharacteristic = await service.getCharacteristic(0xff02);
+	// Each 8 pixels in a row is represented by a byte
+	const data = new Uint8Array((canvas.width / 8) * canvas.height);
+	let offset = 0;
+	// Loop through image rows in bytes
+	for (let i = 0; i < canvas.height; ++i) {
+		for (let k = 0; k < canvas.width / 8; ++k) {
+			const k8 = k * 8;
+			// Pixel to bit position mapping
+			data[offset++] =
+				getWhitePixel(canvas, imageData, k8 + 0, i) * 128 +
+				getWhitePixel(canvas, imageData, k8 + 1, i) * 64 +
+				getWhitePixel(canvas, imageData, k8 + 2, i) * 32 +
+				getWhitePixel(canvas, imageData, k8 + 3, i) * 16 +
+				getWhitePixel(canvas, imageData, k8 + 4, i) * 8 +
+				getWhitePixel(canvas, imageData, k8 + 5, i) * 4 +
+				getWhitePixel(canvas, imageData, k8 + 6, i) * 2 +
+				getWhitePixel(canvas, imageData, k8 + 7, i);
+		}
+	}
 
-    statusEl.textContent = "Verbunden mit " + bluetoothDevice.name;
+	return data;
+};
 
-    bluetoothDevice.addEventListener('gattserverdisconnected', () => {
-      statusEl.textContent = "Getrennt – bitte erneut verbinden";
-      printerCharacteristic = null;
-    });
+/**
+ * Given a Bluetooth characteristic and a canvas, sends the necessary data to print it.
+ * @param {BluetoothRemoteGATTCharacteristic} characteristic
+ * @param {HTMLCanvasElement} canvas
+ */
+export const printCanvas = async (characteristic, canvas) => {
+	const data = getPrintData(canvas);
 
-  } catch (error) {
-    console.error(error);
-    statusEl.textContent = "Fehler: " + error;
-  }
-}
+	await characteristic.writeValueWithResponse(
+		HEADER_DATA(canvas.width / 8, data.length / (canvas.width / 8))
+	);
 
-async function sendRaw(data) {
-  if (!printerCharacteristic) await connectPrinter();
-  await printerCharacteristic.writeValue(data);
-}
+	for (let i = 0; i < data.length; i += PACKET_SIZE_BYTES) {
+		await characteristic.writeValueWithResponse(data.slice(i, i + PACKET_SIZE_BYTES));
+		console.log(`Sent ${Math.min(i + PACKET_SIZE_BYTES, data.length)}/${data.length} bytes`);
+	}
 
-async function textToBitmap(text) {
-  const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d');
-  ctx.font = '24px Arial';
-  const width = Math.ceil(ctx.measureText(text).width);
-  canvas.width = width;
-  canvas.height = 32;
-
-  ctx.fillStyle = 'white';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = 'black';
-  ctx.fillText(text, 0, 24);
-
-  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-  return convertImageDataToPhomemo(imageData);
-}
-
-function convertImageDataToPhomemo(imageData) {
-  // sehr einfache 1-bit Konvertierung (schwarz/weiß)
-  const width = imageData.width;
-  const height = imageData.height;
-  const bytesPerLine = Math.ceil(width / 8);
-  const output = [];
-
-  // ESC/POS ähnliche Struktur
-  output.push(0x1F, 0x11, bytesPerLine & 0xFF, height & 0xFF);
-
-  for (let y = 0; y < height; y++) {
-    for (let xByte = 0; xByte < bytesPerLine; xByte++) {
-      let byte = 0;
-      for (let bit = 0; bit < 8; bit++) {
-        const x = xByte * 8 + bit;
-        if (x >= width) continue;
-        const idx = (y * width + x) * 4;
-        const r = imageData.data[idx];
-        if (r < 128) byte |= (1 << (7 - bit));
-      }
-      output.push(byte);
-    }
-  }
-
-  return new Uint8Array(output);
-}
-
-async function printText(text) {
-  try {
-    if (!printerCharacteristic) await connectPrinter();
-    const data = await textToBitmap(text);
-    await sendRaw(data);
-
-    // Feed etwas Papier
-    await sendRaw(Uint8Array.from([0x0A, 0x0A, 0x0A]));
-    statusEl.textContent = "Gedruckt ✅";
-  } catch (err) {
-    console.error(err);
-    statusEl.textContent = "Fehler beim Drucken: " + err;
-  }
-}
-
-// Buttons
-document.getElementById('btn-pair').addEventListener('click', async () => {
-  await connectPrinter();
-});
-
-document.getElementById('btn-print').addEventListener('click', async () => {
-  const text = document.getElementById('input').value;
-  if (text.trim() === '') {
-    statusEl.textContent = "Bitte Text eingeben";
-    return;
-  }
-  await printText(text);
-});
+	console.log(`Sent ${data.length}/${data.length} bytes (done)`);
+	await characteristic.writeValueWithResponse(END_DATA);
+};

@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+	<!-- Full-bleed background (no rounded corners — OS applies the mask shape) -->
+	<rect width="512" height="512" fill="#0d6efd"/>
+	<!-- Printer body -->
+	<rect x="88" y="208" width="336" height="176" rx="24" fill="white"/>
+	<!-- Paper input slot -->
+	<rect x="152" y="152" width="208" height="64" rx="12" fill="white" opacity="0.85"/>
+	<!-- Paper output -->
+	<rect x="168" y="368" width="176" height="92" rx="6" fill="white"/>
+	<!-- Label lines -->
+	<rect x="196" y="392" width="120" height="10" rx="5" fill="#0d6efd" opacity="0.4"/>
+	<rect x="196" y="416" width="88" height="10" rx="5" fill="#0d6efd" opacity="0.4"/>
+	<rect x="196" y="440" width="104" height="10" rx="5" fill="#0d6efd" opacity="0.4"/>
+	<!-- Status LED -->
+	<circle cx="362" cy="292" r="18" fill="#0d6efd"/>
+	<circle cx="362" cy="292" r="10" fill="#7eb8ff"/>
+	<!-- Feed slot line -->
+	<rect x="128" y="356" width="256" height="8" rx="4" fill="#e0e0e0"/>
+</svg>
