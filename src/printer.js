@@ -42,11 +42,13 @@ const getWhitePixel = (canvas, imageData, x, y) => {
 	const red = imageData[idx];
 	const green = imageData[idx + 1];
 	const blue = imageData[idx + 2];
-	// Weighted grayscale luminance — dark pixels print, light pixels don't.
-	// This correctly handles colored emoji pixels (e.g. yellow 😊 → luminance ~200 → white)
-	// and dark emoji outlines/shadows (low luminance → black).
-	const luminance = (red * 299 + green * 587 + blue * 114) / 1000;
-	return luminance < 128 ? 1 : 0;
+	const alpha = imageData[idx + 3];
+	// Treat fully transparent pixels as white (background).
+	// Otherwise, treat any pixel that isn't near-white as black to print.
+	// Checking all channels > 240 (rather than luminance) correctly handles
+	// saturated colors like yellow ⚡ that have high luminance but should print.
+	if (alpha < 128) return 0;
+	return (red > 240 && green > 240 && blue > 240) ? 0 : 1;
 };
 
 /**
