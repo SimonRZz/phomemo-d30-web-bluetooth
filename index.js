@@ -36,12 +36,11 @@ const updateCanvasText = (canvas) => {
 	ctx.fillStyle = "#fff";
 	ctx.fillRect(0, 0, canvas.width, canvas.height);
 
+	ctx.save();
 	ctx.translate(canvas.width / 2, canvas.height / 2);
 	ctx.rotate(Math.PI / 2);
 
 	ctx.fillStyle = "#000";
-	ctx.textAlign = "center";
-	ctx.textBaseline = "top";
 	drawText(ctx, text, {
 		x: -canvas.height / 2,
 		y: -canvas.width / 2,
@@ -51,8 +50,7 @@ const updateCanvasText = (canvas) => {
 		fontSize,
 	});
 
-	ctx.rotate(-Math.PI / 2);
-	ctx.translate(-canvas.width / 2, -canvas.height / 2);
+	ctx.restore();
 };
 
 const updateCanvasBarcode = (canvas) => {
@@ -63,14 +61,14 @@ const updateCanvasBarcode = (canvas) => {
 		ctx.fillStyle = "#fff";
 		ctx.fillRect(0, 0, canvas.width, canvas.height);
 
+		ctx.save();
 		ctx.translate(canvas.width / 2, canvas.height / 2);
 		ctx.rotate(Math.PI / 2);
 
 		ctx.imageSmoothingEnabled = false;
 		ctx.drawImage(image, -image.width / 2, -image.height / 2);
 
-		ctx.rotate(-Math.PI / 2);
-		ctx.translate(-canvas.width / 2, -canvas.height / 2);
+		ctx.restore();
 	});
 
 	JsBarcode(image, barcodeData, {
@@ -82,11 +80,13 @@ const updateCanvasBarcode = (canvas) => {
 };
 
 const drawImageToCanvas = (ctx, url, doScale = true) => {
+	const canvas = ctx.canvas;
 	const img = new Image();
 	img.addEventListener("load", () => {
 		ctx.fillStyle = "#fff";
 		ctx.fillRect(0, 0, canvas.width, canvas.height);
 
+		ctx.save();
 		ctx.translate(canvas.width / 2, canvas.height / 2);
 		ctx.rotate(Math.PI / 2);
 
@@ -97,8 +97,7 @@ const drawImageToCanvas = (ctx, url, doScale = true) => {
 		const drawHeight = img.height * scale;
 		ctx.drawImage(img, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
 
-		ctx.rotate(-Math.PI / 2);
-		ctx.translate(-canvas.width / 2, -canvas.height / 2);
+		ctx.restore();
 	});
 	img.addEventListener("error", () => {
 		handleError("failed to load image");
