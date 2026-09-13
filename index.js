@@ -174,6 +174,14 @@ document.addEventListener("DOMContentLoaded", function () {
 	const CHAR_UUID = "0000ff02-0000-1000-8000-00805f9b34fb";
 
 	const getCharacteristic = async () => {
+		if (!navigator.bluetooth) {
+			throw new Error(
+				"Web Bluetooth is not available in this browser. " +
+					"Use Chrome, Edge or Opera on macOS, Windows, Linux or Android — " +
+					"Safari and Firefox do not support it, and no browser on iOS does."
+			);
+		}
+
 		// Reuse existing connection if still live
 		if (cachedChar && cachedDevice?.gatt?.connected) {
 			return cachedChar;
@@ -221,4 +229,10 @@ document.addEventListener("DOMContentLoaded", function () {
 			handleError(err);
 		}
 	});
+
+	// Warn up front rather than letting the user discover it on submit.
+	if (!navigator.bluetooth) {
+		$("#unsupportedWarning").hidden = false;
+		$("button[type=submit]").disabled = true;
+	}
 });
